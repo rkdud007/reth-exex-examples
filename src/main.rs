@@ -1,11 +1,7 @@
 mod rpc;
 mod wasm;
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use base64::{prelude::*, Engine};
 use jsonrpsee::core::RpcResult;
@@ -84,7 +80,7 @@ impl<Node: FullNodeComponents> WasmExEx<Node> {
             self.ctx.events.send(ExExEvent::FinishedHeight(tip))?;
         }
 
-        info!("Handled notification");
+        info!(committed_chain_tip = committed_chain_tip, "committed chain tip",);
 
         Ok(())
     }
@@ -135,6 +131,8 @@ impl<Node: FullNodeComponents> WasmExEx<Node> {
 fn main() -> eyre::Result<()> {
     reth::cli::Cli::parse_args().run(|builder, _| async move {
         let (rpc_tx, rpc_rx) = mpsc::unbounded_channel();
+
+        // create fake notification channel to controll notification sender
         let (notification_sender, notification_receiver) = mpsc::channel(100);
         let handle = builder
             .node(EthereumNode::default())
@@ -149,6 +147,7 @@ fn main() -> eyre::Result<()> {
                     .as_ref()
                     .to_path_buf();
 
+                // override notification receiver
                 ctx.notifications = notification_receiver;
 
                 Ok(WasmExEx::new(ctx, rpc_rx, logs_directory)?.start())
@@ -156,14 +155,19 @@ fn main() -> eyre::Result<()> {
             .launch()
             .await?;
 
+        // =============================================
+        // compatible `exex_install`
         install_wasm(
             "http://127.0.0.1:8545",
-            "Minimal",
+            "my_wasm_module",
             "./target/wasm32-wasi/release/wasm-exex.wasi.wasm",
         )
         .await?;
-        start_wasm("http://127.0.0.1:8545", "Minimal").await?;
+        // compatible `exex_start`
+        start_wasm("http://127.0.0.1:8545", "my_wasm_module").await?;
+        // =============================================
 
+        // =============================================
         // send mock notification
         let notification = ExExNotification::ChainCommitted {
             new: Arc::new(Chain::from_block(
@@ -173,6 +177,17 @@ fn main() -> eyre::Result<()> {
             )),
         };
         notification_sender.send(notification).await?;
+
+        // send mock notification 2
+        let notification = ExExNotification::ChainCommitted {
+            new: Arc::new(Chain::from_block(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            )),
+        };
+        notification_sender.send(notification).await?;
+        // =============================================
 
         handle.wait_for_node_exit().await
     })
