@@ -1,6 +1,6 @@
 use std::{fs::File, path::Path};
 
-use reth_tracing::tracing::debug;
+use jsonrpsee::tracing::info;
 use wasi_common::{pipe::WritePipe, sync::WasiCtxBuilder, WasiCtx};
 use wasmtime::{Engine, Linker, Memory, Module, Store, TypedFunc};
 
@@ -81,7 +81,7 @@ impl RunningExEx {
             .call(&mut self.store, (data_ptr, data_size))
             .map_err(|err| eyre::eyre!("failed to call notification func: {err}"))?;
 
-        debug!(target: "wasm", name = %self.name, ?data_ptr, ?data_size, ?output, "Processed notification");
+        info!(target: "wasm", name = %self.name, ?data_ptr, ?data_size, ?output, "Processed notification");
 
         Ok(())
     }
